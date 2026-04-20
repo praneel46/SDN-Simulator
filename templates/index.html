@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SDN Simulator</title>
 
+  <!-- ✅ CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <!-- ✅ VIS NETWORK -->
   <script src="{{ url_for('static', filename='vis-network.min.js') }}"></script>
 
-  <!-- Chart.js -->
+  <!-- ✅ CHART -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
@@ -90,31 +93,35 @@
 <!-- 🚀 COMPARISON PAGE -->
 <div id="comparisonPage" style="display:none;">
 
+  <!-- 🌌 BACKGROUND -->
   <div class="compare-bg"
        style="background-image: url('{{ url_for('static', filename='network-bg2.jpg') }}');">
   </div>
 
   <div class="overlay"></div>
 
+  <!-- 🔥 PARTICLES -->
   <canvas id="particles2"></canvas>
+
+  <!-- ✨ SPARKLES (FIXED POSITION) -->
+  <canvas id="sparkles"></canvas>
 
   <div class="compare-content">
 
     <h1 class="compare-title">DIJKSTRA vs A* PERFORMANCE</h1>
 
-    <!-- 🔥 BIG GRAPH -->
+    <!-- 📊 GRAPH -->
     <div class="chart-container">
       <canvas id="chartCanvas"></canvas>
-      <canvas id="sparkles"></canvas>
     </div>
 
-    <!-- 📦 BIG CARDS -->
+    <!-- 📦 STATS -->
     <div id="compareStats">
       <div id="dijkstraBox"></div>
       <div id="astarBox"></div>
     </div>
 
-    <!-- ⚡ ANALYZE BUTTON -->
+    <!-- ⚡ ANALYZE -->
     <button id="analyzeBtn" onclick="startAnalysis()">⚡ Analyze Performance</button>
 
     <!-- 🔄 LOADING -->
@@ -123,11 +130,11 @@
       <p>Analyzing routing efficiency...</p>
     </div>
 
-    <!-- 🏆 WINNER (HIDDEN INITIALLY) -->
+    <!-- 🏆 WINNER -->
     <h2 id="winner" style="display:none;"></h2>
 
-    <!-- ✨ EXPLANATION CARD -->
-    <div id="explainBox" style="display:none;" class="explain-card">
+    <!-- ✨ EXPLANATION -->
+    <div id="explainBox" class="explain-card" style="display:none;">
       <p>
         A* is faster because it uses a heuristic function (h)
         to estimate the distance to the destination.
@@ -144,6 +151,7 @@
 
 </div>
 
+<!-- ✅ MAIN JS (VERY IMPORTANT) -->
 <script src="{{ url_for('static', filename='script.js') }}"></script>
 
 </body>
