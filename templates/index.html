@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SDN Simulator</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='vis-network.min.js') }}"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="dijkstra-mode">
+
+<!-- 🌍 INTRO SCREEN -->
+<div id="intro">
+
+  <div class="intro-bg"
+       style="background-image: url('{{ url_for('static', filename='network-bg.jpg') }}');">
+  </div>
+
+  <div class="overlay"></div>
+
+  <canvas id="particles"></canvas>
+  <div class="pulse"></div>
+
+  <div class="intro-content">
+    <p class="intro-sub">Computer Networks</p>
+    <h1 class="intro-main">SDN NETWORK SIMULATOR</h1>
+    <p class="intro-desc">
+      Simulating Intelligent Routing using Dijkstra & A* Algorithms
+    </p>
+    <button id="startBtn" onclick="enterApp()">🚀 Start Simulation</button>
+  </div>
+
+</div>
+
+<!-- 🔥 MAIN APP -->
+<div id="app" style="display:none;">
+
+  <h1>SDN Network Simulator</h1>
+
+  <p id="algoLabel">Algorithm: Dijkstra</p>
+
+  <button id="switchAlgo" onclick="toggleAlgorithm()">⚡ Switch to A*</button>
+
+  <div id="controls">
+
+    <label>Source:</label>
+    <select id="source">
+      <option>S1</option>
+      <option>S2</option>
+      <option>S3</option>
+      <option>S4</option>
+    </select>
+
+    <label>Destination:</label>
+    <select id="destination">
+      <option>S4</option>
+      <option>S3</option>
+      <option>S2</option>
+      <option>S1</option>
+    </select>
+
+    <br>
+
+    <button onclick="startSimulation()">▶ Start</button>
+    <button onclick="failLink()">💥 Fail Link</button>
+    <button onclick="resetNetwork()">🔄 Reset</button>
+
+    <br>
+
+    <label>Speed:</label>
+    <input type="range" id="speed" min="5" max="90" value="40">
+
+    <br>
+
+    <button onclick="compareAlgorithms()">📊 Compare Algorithms</button>
+
+  </div>
+
+  <p id="status"></p>
+
+  <div id="network"></div>
+
+</div>
+
+<!-- 🚀 COMPARISON PAGE -->
+<div id="comparisonPage" style="display:none;">
+
+  <div class="compare-bg"
+       style="background-image: url('{{ url_for('static', filename='network-bg2.jpg') }}');">
+  </div>
+
+  <div class="overlay"></div>
+
+  <canvas id="particles2"></canvas>
+
+  <div class="compare-content">
+
+    <h1 class="compare-title">DIJKSTRA vs A* PERFORMANCE</h1>
+
+    <!-- 🔥 BIG GRAPH -->
+    <div class="chart-container">
+      <canvas id="chartCanvas"></canvas>
+      <canvas id="sparkles"></canvas>
+    </div>
+
+    <!-- 📦 BIG CARDS -->
+    <div id="compareStats">
+      <div id="dijkstraBox"></div>
+      <div id="astarBox"></div>
+    </div>
+
+    <!-- ⚡ ANALYZE BUTTON -->
+    <button id="analyzeBtn" onclick="startAnalysis()">⚡ Analyze Performance</button>
+
+    <!-- 🔄 LOADING -->
+    <div id="analysisBox" class="analysis-loading" style="display:none;">
+      <div class="loader"></div>
+      <p>Analyzing routing efficiency...</p>
+    </div>
+
+    <!-- 🏆 WINNER (HIDDEN INITIALLY) -->
+    <h2 id="winner" style="display:none;"></h2>
+
+    <!-- ✨ EXPLANATION CARD -->
+    <div id="explainBox" style="display:none;" class="explain-card">
+      <p>
+        A* is faster because it uses a heuristic function (h)
+        to estimate the distance to the destination.
+      </p>
+      <p>
+        This allows it to prioritize better paths early,
+        reducing unnecessary node exploration compared to Dijkstra.
+      </p>
+    </div>
+
+    <button onclick="backToMain()">⬅ Back</button>
+
+  </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
+</body>
+</html>
