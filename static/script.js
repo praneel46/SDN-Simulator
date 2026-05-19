@@ -1,31 +1,31 @@
-document.addEventListener("DOMContentLoaded", function () {
+let finalWinnerText = "";
 
+document.addEventListener("DOMContentLoaded", function () {
+  const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:5000" : "";
   let currentAlgo = "dijkstra";
   let network;
-  let nodes, edges;
+  let nodes;
+  let edges;
   let hasRun = false;
   let chart;
-  let failed = false;
+  let failedEdges = [];
   let isAnimating = false;
+  let activeTopology = { nodes: [], edges: [] };
+  let lastPath = [];
 
-  let finalWinnerText = ""; // 🔥 store winner
+  const sourceSelect = document.getElementById("source");
+  const destinationSelect = document.getElementById("destination");
+  const nodeCountInput = document.getElementById("nodeCount");
+  const speedInput = document.getElementById("speed");
+  const speedValue = document.getElementById("speedValue");
 
-  // ---------- PARTICLES ----------
-  function startParticles(canvasId) {
+  function startParticles(canvasId, options = {}) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
-
-    function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      initParticles();
-    }
-
-    window.addEventListener("resize", resizeCanvas);
-
     let particles = [];
+    const driftOnly = options.driftOnly || false;
 
     function initParticles() {
       particles = [];
@@ -34,36 +34,38 @@ document.addEventListener("DOMContentLoaded", function () {
           x: Math.random() * canvas.width,
           y: Math.random() * canvas.height,
           size: Math.random() * 2 + 1.5,
-          speedX: (Math.random() - 0.5) * 0.6,
-          speedY: (Math.random() - 0.5) * 0.6
+          speedX: (Math.random() - 0.5) * (driftOnly ? 0.9 : 0.6),
+          speedY: driftOnly ? (Math.random() - 0.5) * 0.25 : (Math.random() - 0.5) * 0.6
         });
       }
     }
 
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      initParticles();
+    }
+
+    window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
     function animate() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       particles.forEach(p => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-
         ctx.fillStyle = "rgba(0,255,255,0.9)";
         ctx.shadowBlur = 12;
         ctx.shadowColor = "#00ffff";
-
         ctx.fill();
 
         p.x += p.speedX;
         p.y += p.speedY;
-
         if (p.x < 0) p.x = canvas.width;
         if (p.x > canvas.width) p.x = 0;
         if (p.y < 0) p.y = canvas.height;
         if (p.y > canvas.height) p.y = 0;
       });
-
       requestAnimationFrame(animate);
     }
 
@@ -72,23 +74,82 @@ document.addEventListener("DOMContentLoaded", function () {
 
   startParticles("particles");
 
-  // ---------- GRAPH ----------
-  function initGraph() {
+  speedInput.addEventListener("input", () => {
+    speedValue.innerText = `${speedInput.value}%`;
+  });
 
-    nodes = new vis.DataSet([
-      { id: "S1", label: "S1" },
-      { id: "S2", label: "S2" },
-      { id: "S3", label: "S3" },
-      { id: "S4", label: "S4" }
-    ]);
+  function getNodeCount() {
+    const count = Number.parseInt(nodeCountInput.value, 10);
+    if (Number.isNaN(count)) return 8;
+    return Math.max(4, Math.min(12, count));
+  }
 
-    edges = new vis.DataSet([
-      { id: 1, from: "S1", to: "S2", label: "1" },
-      { id: 2, from: "S2", to: "S3", label: "1" },
-      { id: 3, from: "S3", to: "S4", label: "1" },
-      { id: 4, from: "S1", to: "S3", label: "4" },
-      { id: 5, from: "S1", to: "S4", label: "10" }
-    ]);
+  function updateStatus(msg) {
+    document.getElementById("status").innerText = msg;
+  }
+
+  function updateNodeOptions(selectedSource, selectedDestination) {
+    sourceSelect.innerHTML = "";
+    destinationSelect.innerHTML = "";
+
+    activeTopology.nodes.forEach(node => {
+      sourceSelect.add(new Option(node.id, node.id));
+      destinationSelect.add(new Option(node.id, node.id));
+    });
+
+    sourceSelect.value = selectedSource || "S1";
+    destinationSelect.value = selectedDestination || activeTopology.nodes[activeTopology.nodes.length - 1].id;
+
+    if (sourceSelect.value === destinationSelect.value && activeTopology.nodes.length > 1) {
+      destinationSelect.value = activeTopology.nodes[activeTopology.nodes.length - 1].id;
+    }
+  }
+
+  async function loadTopology(selectedSource, selectedDestination) {
+    const nodeCount = getNodeCount();
+    nodeCountInput.value = nodeCount;
+
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/topology`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node_count: nodeCount })
+      });
+    } catch (error) {
+      updateStatus("Start the Flask server, then open http://127.0.0.1:5000/ for full simulation.");
+      return;
+    }
+
+    activeTopology = await response.json();
+    failedEdges = [];
+    lastPath = [];
+    renderGraph();
+    updateNodeOptions(selectedSource, selectedDestination);
+    renderSdnPanel({
+      controller: `Controller discovered ${activeTopology.nodes.length} switches and ${activeTopology.edges.length} links.`,
+      flow_rules: []
+    });
+    updateStatus(`Generated ${activeTopology.nodes.length}-switch topology. Pick source and destination, then start.`);
+  }
+
+  function renderGraph() {
+    nodes = new vis.DataSet(activeTopology.nodes.map(node => ({
+      id: node.id,
+      label: node.label,
+      x: node.x,
+      y: node.y,
+      fixed: true
+    })));
+
+    edges = new vis.DataSet(activeTopology.edges.map(edge => ({
+      id: edge.id,
+      from: edge.from,
+      to: edge.to,
+      label: String(edge.weight),
+      width: 2,
+      color: { color: "#8aa1b8" }
+    })));
 
     network = new vis.Network(
       document.getElementById("network"),
@@ -97,156 +158,250 @@ document.addEventListener("DOMContentLoaded", function () {
         physics: false,
         interaction: {
           zoomView: false,
-          dragView: false
+          dragView: false,
+          dragNodes: false,
+          hover: true
+        },
+        nodes: {
+          shape: "dot",
+          size: 22,
+          font: { color: "#111827", size: 16 },
+          color: { background: "#67e8f9", border: "#0f172a" }
+        },
+        edges: {
+          font: { align: "top", color: "#0f172a", strokeWidth: 0 },
+          smooth: { type: "continuous" }
         }
       }
     );
+
+    network.once("afterDrawing", () => {
+      network.fit({ animation: false });
+      network.redraw();
+    });
   }
 
-  window.enterApp = function () {
+  window.enterApp = async function () {
     document.getElementById("intro").style.display = "none";
     document.getElementById("app").style.display = "block";
-    initGraph();
+    await loadTopology();
+  };
+
+  window.generateCustomTopology = async function () {
+    if (isAnimating) return;
+    hasRun = false;
+    await loadTopology();
   };
 
   window.toggleAlgorithm = function () {
     const label = document.getElementById("algoLabel");
-
     if (currentAlgo === "dijkstra") {
       currentAlgo = "astar";
       document.body.className = "astar-mode";
       label.innerText = "Algorithm: A*";
+      document.getElementById("switchAlgo").innerText = "Switch to Dijkstra";
     } else {
       currentAlgo = "dijkstra";
       document.body.className = "dijkstra-mode";
       label.innerText = "Algorithm: Dijkstra";
+      document.getElementById("switchAlgo").innerText = "Switch to A*";
     }
-
-    failed = false;
-    initGraph();
   };
 
-  function updateStatus(msg) {
-    document.getElementById("status").innerText = msg;
-  }
-
-  function colorPath(path, color) {
-
+  function colorPath(path, color, glowColor) {
     edges.forEach(e => {
-      edges.update({ id: e.id, color: { color: "#848484" }, width: 1 });
+      edges.update({
+        id: e.id,
+        color: { color: "#8aa1b8" },
+        width: 2,
+        dashes: false,
+        shadow: false
+      });
     });
 
     for (let i = 0; i < path.length - 1; i++) {
-      let edge = edges.get().find(e =>
+      const edge = edges.get().find(e =>
         (e.from === path[i] && e.to === path[i + 1]) ||
         (e.to === path[i] && e.from === path[i + 1])
       );
-
-      if (edge) {
-        edges.update({
-          id: edge.id,
-          color: { color: color },
-          width: 5
-        });
-      }
+      if (edge) edges.update({
+        id: edge.id,
+        color: { color },
+        width: 7,
+        dashes: false,
+        shadow: { enabled: true, color: glowColor, size: 18, x: 0, y: 0 }
+      });
     }
   }
 
-  window.startSimulation = async function () {
+  async function pulseAstarSearch(explored, path) {
+    const pathSet = new Set(path);
+    for (const node of explored || []) {
+      if (!nodes.get(node)) continue;
+      nodes.update({
+        id: node,
+        color: {
+          background: pathSet.has(node) ? "#f97316" : "#fed7aa",
+          border: "#ffedd5",
+          highlight: { background: "#fb923c", border: "#ffffff" }
+        },
+        shadow: { enabled: true, color: "rgba(251, 146, 60, 0.85)", size: 18, x: 0, y: 0 }
+      });
+      await sleep(70);
+    }
 
-    if (isAnimating) return;
-    isAnimating = true;
-
-    hasRun = true;
-
-    let src = source.value;
-    let dst = destination.value;
-
-    updateStatus("🧠 Calculating path...");
-
-    let res = await fetch('/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source: src,
-        destination: dst,
-        algo: currentAlgo,
-        failed: failed
-      })
+    activeTopology.nodes.forEach(node => {
+      nodes.update({
+        id: node.id,
+        color: { background: "#67e8f9", border: "#0f172a" },
+        shadow: false
+      });
     });
+  }
 
-    let data = await res.json();
-    let path = data.path;
+  function sameEdge(edge, target) {
+    return (
+      (edge.from === target.from && edge.to === target.to) ||
+      (edge.to === target.from && edge.from === target.to)
+    );
+  }
+
+  async function requestRoute(algo) {
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: sourceSelect.value,
+          destination: destinationSelect.value,
+          algo,
+          node_count: getNodeCount(),
+          failed_edges: failedEdges
+        })
+      });
+    } catch (error) {
+      updateStatus("Backend is not reachable. Run Flask and open http://127.0.0.1:5000/.");
+      return { path: [], sdn: { controller: "Backend is not reachable.", flow_rules: [] } };
+    }
+    return response.json();
+  }
+
+  window.startSimulation = async function (options = {}) {
+    if (isAnimating) return;
+    if (sourceSelect.value === destinationSelect.value) {
+      updateStatus("Source and destination must be different switches.");
+      return;
+    }
+
+    isAnimating = true;
+    hasRun = true;
+    updateStatus("Controller is calculating the route...");
+
+    const data = await requestRoute(currentAlgo);
+    const path = data.path || [];
+    lastPath = path;
+    const isReroute = options.reroute === true;
 
     if (!path.length) {
-      updateStatus("❌ No path found");
+      updateStatus("No path found after current link failures.");
+      renderSdnPanel(data.sdn || { controller: "No route installed.", flow_rules: [] });
       isAnimating = false;
       return;
     }
 
-    updateStatus("Path: " + path.join(" → "));
-    colorPath(path, currentAlgo === "astar" ? "orange" : "cyan");
-
-    await animatePacket(path);
-
+    updateStatus(`${isReroute ? "Rerouted path" : "Shortest path"}: ${path.join(" -> ")} | Cost: ${data.cost} | Hops: ${data.hops}`);
+    if (currentAlgo === "astar") {
+      updateStatus(`A* is scanning promising switches first: ${(data.explored || []).join(" -> ")}`);
+      await pulseAstarSearch(data.explored, path);
+    }
+    colorPath(
+      path,
+      isReroute ? "#ef4444" : "#22c55e",
+      isReroute ? "rgba(239, 68, 68, 0.9)" : "rgba(34, 197, 94, 0.85)"
+    );
+    updateStatus(`${isReroute ? "Rerouted path" : "Shortest path"}: ${path.join(" -> ")} | Cost: ${data.cost} | Hops: ${data.hops}`);
+    renderSdnPanel(data.sdn);
+    await animatePacket(path, { fast: currentAlgo === "astar", reroute: isReroute });
     isAnimating = false;
   };
 
-  async function animatePacket(path) {
-
-    let speed = document.getElementById("speed").value;
-    let delay = Math.max(8, 140 - speed);
-
-    let id = "packet";
+  async function animatePacket(path, options = {}) {
+    const id = "packet";
     try { nodes.remove(id); } catch {}
 
+    const packetColor = options.fast ? "#fb923c" : "#22c55e";
     nodes.add({
       id,
       shape: "dot",
-      size: 8,
-      color: "lime"
+      size: options.fast ? 15 : 12,
+      color: {
+        background: packetColor,
+        border: "#ecfdf5",
+        highlight: { background: packetColor, border: "#ffffff" }
+      },
+      shadow: {
+        enabled: true,
+        color: options.fast ? "rgba(251, 146, 60, 0.95)" : "rgba(34, 197, 94, 0.9)",
+        size: options.fast ? 28 : 18,
+        x: 0,
+        y: 0
+      }
     });
 
     for (let i = 0; i < path.length - 1; i++) {
+      const pos = network.getPositions([path[i], path[i + 1]]);
+      const a = pos[path[i]];
+      const b = pos[path[i + 1]];
+      const steps = 100;
 
-      let pos = network.getPositions([path[i], path[i + 1]]);
-      let a = pos[path[i]];
-      let b = pos[path[i + 1]];
-
-      for (let t = 0; t <= 1; t += 0.015) {
-
-        let x = a.x + (b.x - a.x) * t;
-        let y = a.y + (b.y - a.y) * t;
-
-        network.moveNode(id, x, y);
-        await new Promise(r => setTimeout(r, delay));
+      for (let step = 0; step <= steps; step++) {
+        const t = step / steps;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        nodes.update({ id, x, y, fixed: { x: true, y: true } });
+        await sleep(packetDelay(options.fast));
       }
     }
 
     nodes.remove(id);
   }
 
-  window.failLink = async function () {
+  function packetDelay(fast = false) {
+    const speed = Number.parseInt(speedInput.value, 10);
+    const delay = Math.round(62 - (Math.max(1, Math.min(100, speed)) * 0.58));
+    return fast ? Math.max(2, Math.round(delay * 0.45)) : delay;
+  }
 
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, Math.max(4, ms)));
+  }
+
+  window.failLink = async function () {
     if (isAnimating) return;
 
-    updateStatus("💥 Link S2-S3 failed");
+    const route = lastPath.length >= 2 ? lastPath : (await requestRoute(currentAlgo)).path;
+    if (!route || route.length < 2) {
+      updateStatus("No active path is available to fail.");
+      return;
+    }
 
-    failed = true;
+    const middle = Math.floor((route.length - 1) / 2);
+    const failedEdge = { from: route[middle], to: route[middle + 1] };
+    if (!failedEdges.some(edge => sameEdge(edge, failedEdge))) {
+      failedEdges.push(failedEdge);
+    }
 
-    edges.remove(
-      edges.get({
-        filter: e =>
-          (e.from === "S2" && e.to === "S3") ||
-          (e.from === "S3" && e.to === "S2")
-      })
-    );
+    const edge = edges.get().find(e => sameEdge(e, failedEdge));
+    if (edge) {
+      edges.remove(edge.id);
+    }
 
-    await startSimulation();
+    updateStatus(`Failed link ${failedEdge.from}-${failedEdge.to}. Removed from topology. Controller is recalculating...`);
+    await window.startSimulation({ reroute: true });
   };
 
   window.compareAlgorithms = async function () {
-
     if (!hasRun) {
       alert("Run simulation first!");
       return;
@@ -254,55 +409,89 @@ document.addEventListener("DOMContentLoaded", function () {
 
     app.style.display = "none";
     comparisonPage.style.display = "block";
-
-    startParticles("particles2");
+    startParticles("particles2", { driftOnly: true });
 
     document.getElementById("winner").style.display = "none";
     document.getElementById("explainBox").style.display = "none";
 
-    let src = source.value;
-    let dst = destination.value;
-
-    let d = await fetch('/run', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ source: src, destination: dst, algo: "dijkstra" })
-    }).then(r => r.json());
-
-    let a = await fetch('/run', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ source: src, destination: dst, algo: "astar" })
-    }).then(r => r.json());
+    const d = await requestRoute("dijkstra");
+    const a = await requestRoute("astar");
+    document.getElementById("compareContext").innerText =
+      `Live comparison for ${sourceSelect.value} to ${destinationSelect.value} on ${getNodeCount()} switches` +
+      (failedEdges.length ? ` after ${failedEdges.length} failed link(s)` : "");
 
     if (chart) chart.destroy();
 
     chart = new Chart(chartCanvas, {
-      type: 'bar',
+      type: "line",
       data: {
-        labels: ['Time','Cost','Hops'],
+        labels: ["Controller Time", "Path Cost", "Hop Count", "Explored Switches"],
         datasets: [
-          { label: 'Dijkstra', data: [d.time,d.cost,d.hops], backgroundColor:'rgba(0,150,255,0.7)' },
-          { label: 'A*', data: [a.time,a.cost,a.hops], backgroundColor:'rgba(255,140,0,0.7)' }
+          {
+            label: "Dijkstra",
+            data: [d.time, d.cost, d.hops, d.explored.length],
+            borderColor: "#22d3ee",
+            backgroundColor: "rgba(34,211,238,0.2)",
+            pointBackgroundColor: "#22d3ee",
+            pointRadius: 6,
+            tension: 0.35,
+            fill: true
+          },
+          {
+            label: "A*",
+            data: [a.time, a.cost, a.hops, a.explored.length],
+            borderColor: "#fb923c",
+            backgroundColor: "rgba(251,146,60,0.2)",
+            pointBackgroundColor: "#fb923c",
+            pointRadius: 6,
+            tension: 0.35,
+            fill: true
+          }
         ]
       },
       options: {
-        responsive:true,
-        scales:{
-          x:{ticks:{color:"#fff"}},
-          y:{ticks:{color:"#fff"}}
+        responsive: true,
+        animation: {
+          duration: 1300,
+          easing: "easeOutQuart"
+        },
+        scales: {
+          x: { ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" } },
+          y: { ticks: { color: "#fff" }, grid: { color: "rgba(255,255,255,0.08)" }, beginAtZero: true }
+        },
+        plugins: {
+          legend: { labels: { color: "#fff" } }
         }
       }
     });
 
-    dijkstraBox.innerHTML = `Dijkstra<br>Time:${d.time} ms<br>Cost:${d.cost}<br>Hops:${d.hops}`;
-    astarBox.innerHTML = `A*<br>Time:${a.time} ms<br>Cost:${a.cost}<br>Hops:${a.hops}`;
+    dijkstraBox.innerHTML = `Dijkstra<br>Time: ${d.time} ms<br>Cost: ${d.cost}<br>Hops: ${d.hops}<br>Explored: ${d.explored.length}`;
+    astarBox.innerHTML = `A*<br>Time: ${a.time} ms<br>Cost: ${a.cost}<br>Hops: ${a.hops}<br>Explored: ${a.explored.length}`;
 
     finalWinnerText =
-      (a.time < d.time) ? "🏆 A* is Faster" :
-      (a.time > d.time) ? "🏆 Dijkstra is Faster" :
-      "⚖ Equal Performance";
+      a.time < d.time ? "A* is faster" :
+      a.time > d.time ? "Dijkstra is faster" :
+      "Equal performance";
   };
+
+  function renderSdnPanel(sdn) {
+    document.getElementById("controllerStatus").innerText = sdn.controller;
+    const rows = (sdn.flow_rules || []).map(rule => `
+      <tr>
+        <td>${rule.switch}</td>
+        <td>${rule.match}</td>
+        <td>${rule.in}</td>
+        <td>${rule.out}</td>
+      </tr>
+    `).join("");
+
+    document.getElementById("flowTable").innerHTML = rows
+      ? `<table>
+          <thead><tr><th>Switch</th><th>Match</th><th>In Port</th><th>Out Port</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`
+      : "<p>No flow rules installed yet.</p>";
+  }
 
   window.backToMain = function () {
     comparisonPage.style.display = "none";
@@ -312,97 +501,37 @@ document.addEventListener("DOMContentLoaded", function () {
   window.resetNetwork = function () {
     location.reload();
   };
-
 });
 
-// ---------- FINAL ANALYSIS FLOW ----------
 function startAnalysis() {
-
   const box = document.getElementById("analysisBox");
   const winner = document.getElementById("winner");
   const explain = document.getElementById("explainBox");
 
   winner.style.display = "none";
   explain.style.display = "none";
+  explain.classList.remove("analysis-glow");
 
   box.style.display = "block";
-  box.innerHTML = "🧠 Analyzing...";
+  box.innerHTML = "Analyzing route efficiency...";
 
   setTimeout(() => {
-    box.innerHTML = "📊 Comparing stats...";
+    box.innerHTML = "Comparing controller metrics...";
   }, 1200);
 
   setTimeout(() => {
-    box.innerHTML = "⚡ Finalizing...";
+    box.innerHTML = "Finalizing...";
   }, 2500);
 
   setTimeout(() => {
     box.style.display = "none";
-
     winner.style.display = "block";
-    winner.innerText = finalWinnerText;
-
+    winner.innerText = finalWinnerText || "Run comparison first";
     winner.style.textShadow = "0 0 20px #00ffcc, 0 0 40px #00ffcc";
-
-    startSparkles(); // 🎉 trigger here
   }, 4000);
 
   setTimeout(() => {
     explain.style.display = "block";
+    explain.classList.add("analysis-glow");
   }, 5200);
-}
-
-
-// 🔥 FULL SCREEN SPARKLES (ONLY ONE FUNCTION)
-function startSparkles() {
-
-  const canvas = document.getElementById("sparkles");
-  if (!canvas) return;
-
-  const ctx = canvas.getContext("2d");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-
-  let sparks = [];
-
-  for (let i = 0; i < 250; i++) {
-    sparks.push({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 2,
-      vy: Math.random() * 3 + 1,
-      size: Math.random() * 3 + 1,
-      life: Math.random() * 100 + 80
-    });
-  }
-
-  function animateSparkles() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    sparks.forEach(s => {
-
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-
-      ctx.fillStyle = "rgba(0,255,255,0.9)";
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = "#00ffff";
-
-      ctx.fill();
-
-      s.x += s.vx;
-      s.y += s.vy;
-      s.life--;
-
-      if (s.y > canvas.height || s.life <= 0) {
-        s.x = Math.random() * canvas.width;
-        s.y = -10;
-        s.life = Math.random() * 100 + 80;
-      }
-    });
-
-    requestAnimationFrame(animateSparkles);
-  }
-
-  animateSparkles();
 }
